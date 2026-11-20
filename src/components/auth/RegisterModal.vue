@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import GoogleLoginButton from "./GoogleLoginButton.vue";
+import GoogleLoginButton from "../GoogleLoginButton.vue";
 import api from "@/api/api.ts";
+import PasswordInput from "../common/PasswordInput.vue";
 import { useToastStore } from "@/stores/toast.ts";
 
 const emit = defineEmits(["close"]);
@@ -30,16 +31,13 @@ async function handleRegister() {
       email: email.value,
       password: password.value,
     });
-    console.log("exitoso el registro: ", response.data);
     toastStore.showToast("Usuario registrado correctamente", "success");
     emit("close");
   } catch (error) {
-    console.error("error al registrar: ", error);
     toastStore.showToast("Ocurrió un error al registrar el usuario", "error");
   }
 }
 </script>
-
 <template>
   <div
     class="fixed inset-0 flex items-center justify-center bg-black/50 z-50 p-4"
@@ -89,17 +87,12 @@ async function handleRegister() {
             />
           </div>
           <div class="flex flex-col flex-1">
-            <label for="">Contraseña</label>
-            <input
-              v-model="password"
-              type="password"
-              placeholder="Contraseña"
-              class="border border-gray-200 outline-none rounded-md px-3 py-2"
-            />
+            <label for="password">Contraseña</label>
+            <PasswordInput id="password" v-model="password" />
           </div>
           <button
             type="submit"
-            class="py-2 w-full text-white rounded-lg bg-[#2196F3] hover:bg-[#1E88E6] transition"
+            class="py-2 w-full text-white rounded-lg bg-[#2196F3] hover:bg-[#1E88E6] transition cursor-pointer"
           >
             Registrarse
           </button>

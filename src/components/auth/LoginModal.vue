@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import GoogleLoginButto from "./GoogleLoginButton.vue";
+import GoogleLoginButto from "../GoogleLoginButton.vue";
+import PasswordInput from "../common/PasswordInput.vue";
 import api from "@/api/api.ts";
 import router from "@/router";
 const emit = defineEmits(["close"]);
@@ -79,16 +80,11 @@ async function handleLogin() {
           </div>
           <div class="item-center justify-around">
             <label for="password">Contraseña</label>
-            <input
-              v-model="password"
-              type="password"
-              placeholder="Contraseña"
-              class="py-2 px-3 border border-gray-200 rounded-md w-full outline-none"
-            />
+            <PasswordInput id="password" v-model="password" />
           </div>
           <button
             type="submit"
-            class="py-2 w-full text-white rounded-lg bg-[#2196F3] hover:bg-[#1E88E5] transition"
+            class="py-2 w-full text-white rounded-lg bg-[#2196F3] hover:bg-[#1E88E5] transition cursor-pointer"
           >
             Ingresar
           </button>

@@ -14,7 +14,7 @@ const handleGoogleLogin = () => {
   </div>
   <button
     @click="handleGoogleLogin"
-    class="py-2 border rounded-sm border-gray-200 w-full flex flex-row items-center justify-center"
+    class="py-2 border rounded-sm border-gray-200 w-full flex flex-row items-center justify-center cursor-pointer hover:bg-gray-100 transition gap-2"
   >
     <img :src="google" alt="Google" class="w-6 h-6" />
     Continuar con Google
