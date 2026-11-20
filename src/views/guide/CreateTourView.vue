@@ -1,20 +1,15 @@
 <script setup lang="ts">
+import api from "@/api/api";
 import { ref } from "vue";
 import axios from "axios";
-import {
-  ArrowLeft,
-  Upload,
-  X,
-  Plus,
-  Trash2,
-  MapPin,
-  Clock,
-  Users,
-  DollarSign,
-} from "lucide-vue-next";
+import { MapPin, Users, DollarSign, Upload } from "lucide-vue-next";
+import TourPhotoUploader from "@/components/tours/create/TourPhotoUploader.vue";
+import TourScheduleEditor from "@/components/tours/create/TourScheduleEditor.vue";
+import TourFeatureEditor from "@/components/tours/create/TourFeatureEditor.vue";
+import TourMeetingLocation from "@/components/tours/create/TourMeetingLocation.vue";
+
 import { useToastStore } from "@/stores/toast.ts";
 import { useAuthStore } from "@/stores/auth";
-import api from "@/api/api";
 
 const toastStore = useToastStore();
 const authStore = useAuthStore();
@@ -29,74 +24,31 @@ const durationMinutes = ref<number | null>(null);
 const category = ref("");
 const meetingAddress = ref("");
 
-//Las fotos del servicio
 const photos = ref<File[]>([]);
 const photoPreviews = ref<string[]>([]);
 
-//Gestion de las fotos
-const handlePhotos = (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  if (!input.files) return;
-  const selectedFiles = Array.from(input.files);
-  const availableSlots = 5 - photos.value.length;
-  const filesToAdd = selectedFiles.slice(0, availableSlots);
-  filesToAdd.forEach((file) => {
-    photos.value.push(file);
-    photoPreviews.value.push(URL.createObjectURL(file));
-  });
-  input.value = "";
-};
+function handlePreviewsChange(previews: string[]) {
+  photoPreviews.value = previews;
+}
 
-const removePhoto = (index: number) => {
-  URL.revokeObjectURL(photoPreviews.value[index] ?? "");
+const latitude = ref<number | null>(null);
+const longitude = ref<number | null>(null);
 
-  photos.value.splice(index, 1);
-  photoPreviews.value.splice(index, 1);
-};
-
-//horarios
 type DayOfWeek = "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY" | "SATURDAY" | "SUNDAY";
+
 interface Schedule {
   day: DayOfWeek | "";
   startTime: string;
 }
+
 const schedules = ref<Schedule[]>([]);
-const days = [
-  { value: "MONDAY", label: "Lunes" },
-  { value: "TUESDAY", label: "Martes" },
-  { value: "WEDNESDAY", label: "Miércoles" },
-  { value: "THURSDAY", label: "Jueves" },
-  { value: "FRIDAY", label: "Vierne" },
-  { value: "SATURDAY", label: "Sábado" },
-  { value: "SUNDAY", label: "Domingo" },
-];
-const addSchedule = () => {
-  schedules.value.push({
-    day: "",
-    startTime: "",
-  });
-};
-const removeSchedule = (index: number) => {
-  schedules.value.splice(index, 1);
-};
+
 //Caracteristicas
 interface Feature {
   name: string;
   included: boolean;
 }
 const features = ref<Feature[]>([]);
-const newFeature = ref("");
-const addFeature = () => {
-  const name = newFeature.value.trim();
-  if (!name) return;
-  features.value.push({ name, included: true });
-  newFeature.value = "";
-};
-
-const removeFeature = (index: number) => {
-  features.value.splice(index, 1);
-};
-
 async function createTour() {
   if (!authStore.isAuthenticated) {
     toastStore.showToast("Debes iniciar sesión con Google antes de aplicar", "error");
@@ -112,9 +64,9 @@ async function createTour() {
     !maxParticipants.value ||
     !durationMinutes.value ||
     !category.value ||
-    !meetingAddress.value.trim() ||
     photos.value.length === 0 ||
-    schedules.value.length === 0
+    schedules.value.length === 0 ||
+    schedules.value.some((schedule) => !schedule.day || !schedule.startTime)
   ) {
     toastStore.showToast("Todos los campos son obligatorios", "error");
     return;
@@ -129,9 +81,22 @@ async function createTour() {
       maxParticipants: maxParticipants.value,
       durationMinutes: durationMinutes.value,
       category: category.value,
+
+      schedules: schedules.value.map((schedule) => ({
+        day: schedule.day,
+        startTime: schedule.startTime,
+      })),
+
+      features: features.value.map((feature) => ({
+        name: feature.name,
+        included: feature.included,
+      })),
+
       meetingLocation: {
         city: city.value,
         meetingAddress: meetingAddress.value.trim(),
+        latitude: latitude.value,
+        longitude: longitude.value,
       },
     };
     formData.append(
@@ -143,6 +108,21 @@ async function createTour() {
     photos.value.forEach((photo) => {
       formData.append("photos", photo);
     });
+
+    console.log(
+      "Tamaño total de las fotografías:",
+      (photos.value.reduce((total, photo) => total + photo.size, 0) / 1024 / 1024).toFixed(2),
+      "MB",
+    );
+
+    console.table(
+      photos.value.map((photo) => ({
+        nombre: photo.name,
+        tamañoMB: (photo.size / 1024 / 1024).toFixed(2),
+        tipo: photo.type,
+      })),
+    );
+
     const response = await api.post("/tours/create", formData);
     toastStore.showToast("Experiencia publicada correctamente", "success");
   } catch (error) {
@@ -163,17 +143,19 @@ async function createTour() {
     toastStore.showToast("Hubo un error al publicar la experiencia", "error");
   }
 }
+
+function handleLocationSelected(location: {
+  meetingAddress: string;
+  latitude: number;
+  longitude: number;
+}) {
+  meetingAddress.value = location.meetingAddress;
+  latitude.value = location.latitude;
+  longitude.value = location.longitude;
+}
 </script>
 <template>
   <div class="min-h-screen bg-[#f7f7f7] text-gray-900">
-    <header class="sticky top-0 z-30 border-b border-gray-200/80 bg-white/95 backdrop-blur">
-      <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 lg:px-8">
-        <div class="hidden items-center gap-2 sm:flex">
-          <div class="h-2 w-2 rounded-full bg-gray-900"></div>
-          <span class="text-sm font-medium text-gray-500"> Crear experiencia </span>
-        </div>
-      </div>
-    </header>
     <main class="mx-auto max-w-7xl px-6 py-10 lg:px-8 lg:py-14">
       <div class="mb-10 max-w-3xl">
         <h1 class="text-4xl font-bold tracking-tight text-gray-950 sm:text-5xl">
@@ -230,10 +212,8 @@ async function createTour() {
                     <label class="block text-sm font-semibold text-gray-800">
                       Describe tu experiencia
                     </label>
-
                     <span class="text-xs text-gray-400"> {{ description.length }}/1000 </span>
                   </div>
-
                   <textarea
                     v-model="description"
                     rows="6"
@@ -241,13 +221,10 @@ async function createTour() {
                     placeholder="Cuenta qué harán los viajeros, qué lugares conocerán y qué hace especial esta experiencia..."
                     class="w-full resize-none rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-[15px] leading-6 outline-none transition placeholder:text-gray-400 hover:border-gray-300 focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5"
                   />
-
                   <p class="mt-2 text-xs text-gray-400">
                     Evita descripciones genéricas. Cuenta qué hace diferente tu experiencia.
                   </p>
                 </div>
-
-                <!-- CIUDAD + CATEGORIA -->
                 <div class="grid gap-5 md:grid-cols-2">
                   <div>
                     <label class="mb-2 block text-sm font-semibold text-gray-800"> Ciudad </label>
@@ -287,115 +264,7 @@ async function createTour() {
                 </div>
               </div>
             </section>
-            <section
-              class="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)]"
-            >
-              <div class="border-b border-gray-100 px-6 py-6 sm:px-8">
-                <div class="flex items-start justify-between gap-5">
-                  <div>
-                    <h2 class="text-lg font-semibold text-gray-950">Fotos de la experiencia</h2>
-                    <p class="mt-1 text-sm leading-6 text-gray-500">
-                      Una buena fotografía ayuda a que los viajeros imaginen la experiencia.
-                    </p>
-                  </div>
-                  <div
-                    class="hidden rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600 sm:block"
-                  >
-                    {{ photos.length }}/5 fotos
-                  </div>
-                </div>
-              </div>
-
-              <div class="p-6 sm:p-8">
-                <!-- SIN FOTOS -->
-                <label
-                  v-if="photos.length === 0"
-                  class="group flex min-h-[260px] cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed border-gray-200 bg-gray-50 px-6 text-center transition hover:border-gray-400 hover:bg-gray-100"
-                >
-                  <div
-                    class="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 transition group-hover:scale-105"
-                  >
-                    <Upload :size="25" class="text-gray-700" />
-                  </div>
-
-                  <p class="text-sm font-semibold text-gray-900">Sube fotos de tu experiencia</p>
-
-                  <p class="mt-1 max-w-sm text-sm leading-6 text-gray-500">
-                    Muestra los lugares, actividades o momentos que vivirán los viajeros.
-                  </p>
-
-                  <span
-                    class="mt-5 rounded-xl bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white transition group-hover:bg-gray-800"
-                  >
-                    Seleccionar fotos
-                  </span>
-
-                  <span class="mt-3 text-xs text-gray-400"> PNG, JPG o WEBP · Máximo 5 fotos </span>
-
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    class="hidden"
-                    @change="handlePhotos"
-                  />
-                </label>
-                <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <div
-                    v-for="(preview, index) in photoPreviews"
-                    :key="preview"
-                    :class="[
-                      'group relative overflow-hidden rounded-2xl bg-gray-100',
-                      index === 0 ? 'col-span-2 aspect-[2/1] sm:col-span-2' : 'aspect-square',
-                    ]"
-                  >
-                    <img
-                      :src="preview"
-                      alt="Vista previa"
-                      class="h-full w-full object-cover transition duration-500 group-hover:scale-105"
-                    />
-                    <div
-                      class="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/10 opacity-0 transition group-hover:opacity-100"
-                    ></div>
-
-                    <div
-                      v-if="index === 0"
-                      class="absolute bottom-3 left-3 rounded-lg bg-white/95 px-2.5 py-1 text-xs font-semibold text-gray-900 shadow-sm"
-                    >
-                      Foto principal
-                    </div>
-
-                    <button
-                      type="button"
-                      @click="removePhoto(index)"
-                      class="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 text-gray-700 opacity-0 shadow-sm transition hover:bg-white hover:text-red-600 group-hover:opacity-100"
-                    >
-                      <X :size="17" />
-                    </button>
-                  </div>
-                  <label
-                    v-if="photos.length < 5"
-                    class="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gray-200 bg-gray-50 transition hover:border-gray-400 hover:bg-gray-100"
-                  >
-                    <div
-                      class="flex h-11 w-11 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-gray-200"
-                    >
-                      <Plus :size="21" class="text-gray-600" />
-                    </div>
-
-                    <span class="mt-3 text-xs font-semibold text-gray-600"> Agregar foto </span>
-
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      class="hidden"
-                      @change="handlePhotos"
-                    />
-                  </label>
-                </div>
-              </div>
-            </section>
+            <TourPhotoUploader v-model:photos="photos" @previews-change="handlePreviewsChange" />
             <section
               class="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)]"
             >
@@ -476,179 +345,12 @@ async function createTour() {
                 </div>
               </div>
             </section>
-            <section
-              class="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)]"
-            >
-              <div class="border-b border-gray-100 px-6 py-6 sm:px-8">
-                <h2 class="text-lg font-semibold text-gray-950">Detalles del encuentro</h2>
-
-                <p class="mt-1 text-sm text-gray-500">
-                  Ayuda a los viajeros a saber cuánto dura y dónde comienza.
-                </p>
-              </div>
-
-              <div class="grid gap-6 px-6 py-7 sm:px-8 md:grid-cols-2">
-                <!-- DURACION -->
-                <div>
-                  <label class="mb-2 block text-sm font-semibold text-gray-800"> Duración </label>
-
-                  <div class="relative">
-                    <Clock
-                      :size="18"
-                      class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                    />
-
-                    <select
-                      v-model.number="durationMinutes"
-                      class="w-full appearance-none rounded-2xl border border-gray-200 bg-white py-3.5 pl-11 pr-4 text-[15px] outline-none transition hover:border-gray-300 focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5"
-                    >
-                      <option :value="null" disabled>Selecciona la duración</option>
-
-                      <option :value="60">1 hora</option>
-                      <option :value="90">1 hora 30 minutos</option>
-                      <option :value="120">2 horas</option>
-                      <option :value="180">3 horas</option>
-                      <option :value="240">4 horas</option>
-                      <option :value="300">5 horas</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label class="mb-2 block text-sm font-semibold text-gray-800">
-                    Lugar de encuentro
-                  </label>
-                  <div class="relative">
-                    <MapPin
-                      :size="18"
-                      class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                    />
-                    <input
-                      v-model="meetingAddress"
-                      type="text"
-                      placeholder="Ej. Torre del Reloj"
-                      class="w-full rounded-2xl border border-gray-200 py-3.5 pl-11 pr-4 text-[15px] outline-none transition placeholder:text-gray-400 hover:border-gray-300 focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5"
-                    />
-                  </div>
-                </div>
-              </div>
-            </section>
-            <section
-              class="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)]"
-            >
-              <div
-                class="flex flex-col justify-between gap-4 border-b border-gray-100 px-6 py-6 sm:flex-row sm:items-center sm:px-8"
-              >
-                <div>
-                  <h2 class="text-lg font-semibold text-gray-950">Horarios disponibles</h2>
-                  <p class="mt-1 text-sm text-gray-500">
-                    Indica cuándo puedes realizar esta experiencia.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  @click="addSchedule"
-                  class="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-gray-800"
-                >
-                  <Plus :size="17" />
-                  Agregar horario
-                </button>
-              </div>
-              <div class="px-6 py-7 sm:px-8">
-                <div
-                  v-if="schedules.length === 0"
-                  class="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-6 py-10 text-center"
-                >
-                  <Clock :size="28" class="mx-auto mb-3 text-gray-400" />
-                  <p class="text-sm font-medium text-gray-700">Aún no has agregado horarios</p>
-                  <p class="mt-1 text-xs text-gray-400">Agrega al menos un día y una hora.</p>
-                </div>
-                <div v-else class="space-y-3">
-                  <div
-                    v-for="(schedule, index) in schedules"
-                    :key="index"
-                    class="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-3 sm:flex-row sm:items-center"
-                  >
-                    <div class="flex-1">
-                      <select
-                        v-model="schedule.day"
-                        class="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5"
-                      >
-                        <option value="" disabled>Selecciona un día</option>
-                        <option v-for="day in days" :key="day.value" :value="day.value">
-                          {{ day.label }}
-                        </option>
-                      </select>
-                    </div>
-                    <input
-                      v-model="schedule.startTime"
-                      type="time"
-                      class="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5"
-                    />
-                    <button
-                      type="button"
-                      @click="removeSchedule(index)"
-                      class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-gray-400 transition hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 :size="18" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </section>
-            <section
-              class="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.03)]"
-            >
-              <div class="border-b border-gray-100 px-6 py-6 sm:px-8">
-                <h2 class="text-lg font-semibold text-gray-950">¿Qué incluye?</h2>
-                <p class="mt-1 text-sm text-gray-500">
-                  Añade los servicios, actividades o elementos incluidos.
-                </p>
-              </div>
-              <div class="px-6 py-7 sm:px-8">
-                <div class="flex flex-col gap-3 sm:flex-row">
-                  <input
-                    v-model="newFeature"
-                    type="text"
-                    placeholder="Ej. Guía profesional"
-                    class="flex-1 rounded-2xl border border-gray-200 px-4 py-3.5 text-[15px] outline-none transition placeholder:text-gray-400 hover:border-gray-300 focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5"
-                    @keyup.enter.prevent="addFeature"
-                  />
-                  <button
-                    type="button"
-                    @click="addFeature"
-                    class="inline-flex items-center justify-center gap-2 rounded-2xl bg-gray-900 px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-gray-800"
-                  >
-                    <Plus :size="18" />
-                    Agregar
-                  </button>
-                </div>
-                <div v-if="features.length" class="mt-5 grid gap-2 sm:grid-cols-2">
-                  <div
-                    v-for="(feature, index) in features"
-                    :key="index"
-                    class="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3"
-                  >
-                    <div class="flex items-center gap-3">
-                      <div
-                        class="flex h-7 w-7 items-center justify-center rounded-full bg-gray-900 text-xs text-white"
-                      >
-                        ✓
-                      </div>
-                      <span class="text-sm font-medium text-gray-700">
-                        {{ feature.name }}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      @click="removeFeature(index)"
-                      class="rounded-lg p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-600"
-                    >
-                      <Trash2 :size="16" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </section>
+            <TourMeetingLocation
+              v-model:duration-minutes="durationMinutes"
+              @location-selected="handleLocationSelected"
+            />
+            <TourScheduleEditor v-model="schedules" />
+            <TourFeatureEditor v-model="features" />
           </div>
           <aside class="hidden lg:block">
             <div class="sticky top-24 space-y-5">

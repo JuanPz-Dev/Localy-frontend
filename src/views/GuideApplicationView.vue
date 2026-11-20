@@ -125,7 +125,7 @@ async function handleApplication() {
 
 <template>
   <div class="min-h-screen bg-gray-50 px-6 py-12 lg:px-8">
-    <div class="pt-25 mx-auto max-w-5xl text-center">
+    <div class="mx-auto max-w-5xl text-center">
       <h2 class="text-3xl font-bold tracking-tight text-[#12886a]">Conviértete en guía local</h2>
       <p class="mt-3 text-base text-gray-500">Completa la información para enviar tu solicitud</p>
     </div>
