@@ -8,6 +8,8 @@ export type Category =
 export interface Location {
   city: string;
   meetingAddress: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 export interface TourSchedule {
@@ -22,6 +24,7 @@ export interface ServiceFeature {
 
 export interface Tour {
   id: number;
+  guideId?: number;
   title: string;
   description: string;
   photos: string[];
@@ -38,6 +41,24 @@ export interface Tour {
   meetingLocation: Location;
   averageRating: number | null;
   reviewCount: number;
+}
+
+export interface TourUpdateRequest {
+  title: string;
+  description: string;
+  price: number;
+  minParticipants: number;
+  maxParticipants: number;
+  schedules: TourSchedule[];
+  durationMinutes: number;
+  category: Category;
+  features: ServiceFeature[];
+  meetingLocation: {
+    city: string;
+    meetingAddress: string;
+    latitude: number | null;
+    longitude: number | null;
+  };
 }
 
 export interface PageResult<T> {
