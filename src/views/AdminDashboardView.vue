@@ -1,38 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import api from "@/api/api";
-import {
-  Check,
-  Clock3,
-  ShieldCheck,
-  UserRoundCog,
-  Users,
-  X,
-  FileUser,
-  Target,
-} from "lucide-vue-next";
+import { Clock3, ShieldCheck, UserRoundCog, Users } from "lucide-vue-next";
+import PendingGuidesPanel from "@/components/admin/PendingGuideCard.vue";
+import UsersByRolePanel from "@/components/admin/UsersByRolePanel.vue";
+import { useToastStore } from "@/stores/toast";
+import type { PendingGuide, RoleKey, UserRecord } from "@/types/admin";
 
-interface PendingGuide {
-  id: number;
-  name: string;
-  lastName: string;
-  phone: string;
-  address: string;
-  description: string;
-  license: string;
-  cv: string;
-  languages: string[];
-  guideStatus: string;
-}
-
-interface UserRecord {
-  id: number;
-  name: string;
-  lastName: string;
-  email: string;
-  authProvider: string;
-  roles: string[];
-}
+const PENDING_GUIDES_PAGE_SIZE = 10;
+const USERS_PAGE_SIZE = 20;
 
 interface PageResult<T> {
   content: T[];
@@ -41,73 +17,119 @@ interface PageResult<T> {
   totalElements: number;
 }
 
+interface RolePagination {
+  page: number;
+  totalElements: number;
+  hasMore: boolean;
+  loading: boolean;
+}
+
 const pendingGuides = ref<PendingGuide[]>([]);
-const roleGroups = ref<Record<string, UserRecord[]>>({
+const pendingGuidesPage = ref(0);
+const pendingGuidesTotal = ref(0);
+const pendingGuidesHasMore = ref(true);
+const pendingGuidesLoading = ref(false);
+const roleGroups = ref<Record<RoleKey, UserRecord[]>>({
   USER: [],
   GUIDE: [],
   ADMIN: [],
 });
-const activeRole = ref<"USER" | "GUIDE" | "ADMIN">("USER");
+const rolePagination = reactive<Record<RoleKey, RolePagination>>({
+  USER: { page: 0, totalElements: 0, hasMore: true, loading: false },
+  GUIDE: { page: 0, totalElements: 0, hasMore: true, loading: false },
+  ADMIN: { page: 0, totalElements: 0, hasMore: true, loading: false },
+});
 const isLoading = ref(true);
 const isRefreshing = ref(false);
+const toast = useToastStore();
 
 const statCards = computed(() => [
   {
     title: "Guías pendientes",
-    value: pendingGuides.value.length,
+    value: pendingGuidesTotal.value,
     subtitle: "Esperando revisión",
     icon: Clock3,
     tone: "blue",
   },
   {
     title: "Usuarios",
-    value: roleGroups.value.USER?.length ?? 0,
+    value: rolePagination.USER.totalElements,
     subtitle: "Registrados en la app",
     icon: Users,
     tone: "violet",
   },
   {
     title: "Guías",
-    value: roleGroups.value.GUIDE?.length ?? 0,
+    value: rolePagination.GUIDE.totalElements,
     subtitle: "Guías activos",
     icon: ShieldCheck,
     tone: "emerald",
   },
   {
     title: "Administradores",
-    value: roleGroups.value.ADMIN?.length ?? 0,
+    value: rolePagination.ADMIN.totalElements,
     subtitle: "Acceso total",
     icon: UserRoundCog,
     tone: "amber",
   },
 ]);
 
-const roleTabs = [
-  { key: "USER", label: "Usuarios" },
-  { key: "GUIDE", label: "Guías" },
-  { key: "ADMIN", label: "Administradores" },
-] as const;
+async function fetchPendingGuides(append = false) {
+  if (pendingGuidesLoading.value || (append && !pendingGuidesHasMore.value)) return;
 
-const currentRoleUsers = computed(() => roleGroups.value[activeRole.value] ?? []);
+  const page = append ? pendingGuidesPage.value : 0;
+  pendingGuidesLoading.value = true;
+  try {
+    const { data } = await api.get<PageResult<PendingGuide>>("/admin/guides/pending", {
+      params: { page, size: PENDING_GUIDES_PAGE_SIZE },
+    });
 
-async function fetchPendingGuides() {
-  const { data } = await api.get<PageResult<PendingGuide>>("/admin/guides/pending", {
-    params: { page: 0, size: 10 },
-  });
-
-  pendingGuides.value = data.content ?? [];
+    pendingGuides.value = append
+      ? [...pendingGuides.value, ...data.content]
+      : data.content;
+    pendingGuidesPage.value = data.page + 1;
+    pendingGuidesTotal.value = data.totalElements;
+    pendingGuidesHasMore.value =
+      (data.page + 1) * data.size < data.totalElements;
+  } finally {
+    pendingGuidesLoading.value = false;
+  }
 }
 
-async function fetchUsersByRole(role: string) {
-  const { data } = await api.get<PageResult<UserRecord>>("/admin/by-role", {
-    params: { rol: role, page: 0, size: 20 },
-  });
+async function fetchUsersByRole(role: RoleKey, append = false) {
+  const pagination = rolePagination[role];
+  if (pagination.loading || (append && !pagination.hasMore)) return;
 
-  roleGroups.value[role] = data.content ?? [];
+  const page = append ? pagination.page : 0;
+  pagination.loading = true;
+  try {
+    const { data } = await api.get<PageResult<UserRecord>>("/admin/by-role", {
+      params: { rol: role, page, size: USERS_PAGE_SIZE },
+    });
+
+    roleGroups.value[role] = append
+      ? [...roleGroups.value[role], ...data.content]
+      : data.content;
+    pagination.page = data.page + 1;
+    pagination.totalElements = data.totalElements;
+    pagination.hasMore = (data.page + 1) * data.size < data.totalElements;
+  } finally {
+    pagination.loading = false;
+  }
 }
 
 async function loadAdminData() {
   isLoading.value = true;
+  pendingGuides.value = [];
+  pendingGuidesPage.value = 0;
+  pendingGuidesTotal.value = 0;
+  pendingGuidesHasMore.value = true;
+  roleGroups.value = { USER: [], GUIDE: [], ADMIN: [] };
+  for (const pagination of Object.values(rolePagination)) {
+    pagination.page = 0;
+    pagination.totalElements = 0;
+    pagination.hasMore = true;
+  }
 
   try {
     await Promise.all([
@@ -116,8 +138,29 @@ async function loadAdminData() {
       fetchUsersByRole("GUIDE"),
       fetchUsersByRole("ADMIN"),
     ]);
+  } catch (error) {
+    console.error("No se pudo cargar la información del panel administrativo.", error);
+    toast.showToast("No se pudo cargar la información del panel administrativo.", "error");
   } finally {
     isLoading.value = false;
+  }
+}
+
+async function loadMoreUsers(role: RoleKey) {
+  try {
+    await fetchUsersByRole(role, true);
+  } catch (error) {
+    console.error(`No se pudieron cargar más usuarios para el rol ${role}.`, error);
+    toast.showToast("No se pudieron cargar más usuarios.", "error");
+  }
+}
+
+async function loadMorePendingGuides() {
+  try {
+    await fetchPendingGuides(true);
+  } catch (error) {
+    console.error("No se pudieron cargar más solicitudes de guía.", error);
+    toast.showToast("No se pudieron cargar más solicitudes de guía.", "error");
   }
 }
 
@@ -140,8 +183,6 @@ async function handleGuideAction(guideId: number, action: "approve" | "reject") 
   }
 }
 
-const formatRoles = (roles: string[]) => roles.map((role) => role.replace("ROLE_", "")).join(", ");
-
 onMounted(() => {
   loadAdminData();
 });
@@ -150,21 +191,15 @@ onMounted(() => {
 <template>
   <div class="space-y-6">
     <section
-      class="rounded-3xl border border-slate-200 bg-linear-to-r from-blue-600 to-indigo-600 p-6 text-white shadow-sm"
+      class="rounded-3xl border border-slate-200 bg-linear-to-r bg-[#14B8A6] p-6 text-white shadow-sm"
     >
       <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p class="text-sm font-medium text-blue-100">Resumen del sistema</p>
+          <p class="text-sm font-medium">Resumen del sistema</p>
           <h2 class="mt-1 text-3xl font-bold">Bienvenido al panel administrativo</h2>
-        </div>
-
-        <div class="rounded-2xl bg-white/10 px-4 py-3 backdrop-blur-sm">
-          <p class="text-xs uppercase tracking-[0.24em] text-blue-100">Estado</p>
-          <p class="mt-1 text-lg font-semibold">Sistema operativo</p>
         </div>
       </div>
     </section>
-
     <section v-if="isLoading" class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <div
         v-for="n in 4"
@@ -200,179 +235,39 @@ onMounted(() => {
             <component :is="card.icon" class="h-5 w-5" />
           </div>
         </div>
-
         <p class="mt-3 text-sm text-slate-500">{{ card.subtitle }}</p>
       </article>
     </section>
-
     <section class="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-      <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div class="mb-4 flex items-center justify-between">
-          <div>
-            <p class="text-sm text-slate-500">Revisión</p>
-            <h3 class="text-xl font-semibold text-slate-900">Guías pendientes</h3>
-          </div>
-
-          <span class="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
-            {{ pendingGuides.length }} pendientes
-          </span>
-        </div>
-
-        <div v-if="pendingGuides.length" class="space-y-4">
-          <div
-            v-for="guide in pendingGuides"
-            :key="guide.id"
-            class="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-          >
-            <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <div class="flex items-center gap-3">
-                  <div
-                    class="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100 text-sm font-semibold text-blue-700"
-                  >
-                    {{ guide.name.charAt(0).toUpperCase()
-                    }}{{ guide.lastName.charAt(0).toUpperCase() }}
-                  </div>
-
-                  <div>
-                    <p class="text-base font-semibold text-slate-900">
-                      {{ guide.name }} {{ guide.lastName }}
-                    </p>
-                    <p class="text-sm text-slate-500">
-                      {{ guide.phone || "Sin teléfono disponible" }}
-                    </p>
-                  </div>
-                </div>
-
-                <div class="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-2">
-                  <p>
-                    <span class="font-medium text-slate-700">Teléfono:</span>
-                    {{ guide.phone || "No disponible" }}
-                  </p>
-                  <p>
-                    <span class="font-medium text-slate-700">Dirección:</span>
-                    {{ guide.address || "No disponible" }}
-                  </p>
-                </div>
-
-                <p class="mt-3 text-sm text-slate-600">
-                  <span class="font-medium text-slate-700">Descripción:</span>
-                  {{ guide.description || "Sin descripción disponible" }}
-                </p>
-
-                <div class="mt-3 flex flex-wrap gap-2">
-                  <span
-                    v-for="language in guide.languages"
-                    :key="language"
-                    class="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700"
-                  >
-                    {{ language }}
-                  </span>
-                </div>
-              </div>
-
-              <div class="flex flex-col gap-2 md:items-end">
-                <span
-                  class="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700"
-                >
-                  {{ guide.guideStatus }}
-                </span>
-
-                <div class="flex gap-2">
-                  <button
-                    type="button"
-                    @click="viewCv(guide.cv)"
-                    :disable="!guide.cv"
-                    class="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <FileUser class="h-4 w-4" />
-                    Cv
-                  </button>
-
-                  <button
-                    type="button"
-                    @click="handleGuideAction(guide.id, 'approve')"
-                    :disabled="isRefreshing"
-                    class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-60"
-                  >
-                    <Check class="h-4 w-4" />
-                    Aprobar
-                  </button>
-
-                  <button
-                    type="button"
-                    @click="handleGuideAction(guide.id, 'reject')"
-                    :disabled="isRefreshing"
-                    class="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
-                  >
-                    <X class="h-4 w-4" />
-                    Rechazar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div
-          v-else
-          class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center"
-        >
-          <p class="text-lg font-semibold text-slate-700">No hay guías pendientes</p>
-          <p class="mt-2 text-sm text-slate-500">Todo está actualizado en este momento.</p>
-        </div>
-      </article>
-
-      <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div class="mb-4">
-          <p class="text-sm text-slate-500">Usuarios</p>
-          <h3 class="text-xl font-semibold text-slate-900">Usuarios por rol</h3>
-        </div>
-
-        <div class="mb-4 flex flex-wrap gap-2">
-          <button
-            v-for="tab in roleTabs"
-            :key="tab.key"
-            type="button"
-            @click="activeRole = tab.key"
-            :class="[
-              activeRole === tab.key
-                ? 'bg-slate-900 text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
-              'rounded-full px-3 py-1.5 text-sm font-medium transition',
-            ]"
-          >
-            {{ tab.label }}
-          </button>
-        </div>
-
-        <div v-if="currentRoleUsers.length" class="space-y-3">
-          <div
-            v-for="user in currentRoleUsers"
-            :key="user.id"
-            class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
-          >
-            <div>
-              <p class="font-medium text-slate-800">{{ user.name }} {{ user.lastName }}</p>
-              <p class="text-sm text-slate-500">{{ user.email }}</p>
-            </div>
-
-            <div class="text-right">
-              <p class="text-xs uppercase tracking-[0.18em] text-slate-400">Rol</p>
-              <p class="text-sm font-medium text-slate-700">
-                {{ formatRoles(user.roles) || "Sin rol" }}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div
-          v-else
-          class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center"
-        >
-          <p class="text-sm text-slate-500">No hay registros para este rol.</p>
-        </div>
-      </article>
+      <PendingGuidesPanel
+        :guides="pendingGuides"
+        :total="pendingGuidesTotal"
+        :has-more="pendingGuidesHasMore"
+        :loading="pendingGuidesLoading"
+        :busy="isRefreshing"
+        @approve="handleGuideAction($event, 'approve')"
+        @reject="handleGuideAction($event, 'reject')"
+        @load-more="loadMorePendingGuides"
+      />
+      <UsersByRolePanel
+        :groups="roleGroups"
+        :totals="{
+          USER: rolePagination.USER.totalElements,
+          GUIDE: rolePagination.GUIDE.totalElements,
+          ADMIN: rolePagination.ADMIN.totalElements,
+        }"
+        :has-more="{
+          USER: rolePagination.USER.hasMore,
+          GUIDE: rolePagination.GUIDE.hasMore,
+          ADMIN: rolePagination.ADMIN.hasMore,
+        }"
+        :loading="{
+          USER: rolePagination.USER.loading,
+          GUIDE: rolePagination.GUIDE.loading,
+          ADMIN: rolePagination.ADMIN.loading,
+        }"
+        @load-more="loadMoreUsers"
+      />
     </section>
   </div>
 </template>
